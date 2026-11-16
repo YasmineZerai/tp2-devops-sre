@@ -16,6 +16,12 @@ function Stop-WithError([string]$Message) {
 
 kubectl config use-context kind-tp2 | Out-Null
 
+# Nettoyage d'un eventuel essai precedent
+cmd /c "kubectl delete deployment bad-latest bad-no-tag bad-no-resources bad-missing-limits good-compliant -n tp-app --ignore-not-found >NUL 2>&1"
+cmd /c "kubectl delete pod pod-interdit -n tp-app --ignore-not-found >NUL 2>&1"
+cmd /c "helm status gatekeeper -n gatekeeper-system >NUL 2>&1"
+$gkAlreadyInstalled = ($LASTEXITCODE -eq 0)
+
 # ---------------------------------------------------------------------------
 # 1. Installation de Gatekeeper (Helm)
 # ---------------------------------------------------------------------------
@@ -24,7 +30,7 @@ Invoke-Cmd "helm repo add gatekeeper https://open-policy-agent.github.io/gatekee
 Invoke-Cmd "helm repo update gatekeeper"
 Invoke-Cmd "helm upgrade --install gatekeeper gatekeeper/gatekeeper --namespace gatekeeper-system --create-namespace --wait --timeout 6m"
 if ($LASTEXITCODE -ne 0) { Stop-WithError "L'installation de Gatekeeper a echoue." }
-Save-Capture "E2_01_installation_gatekeeper_helm"
+if (-not $gkAlreadyInstalled) { Save-Capture "E2_01_installation_gatekeeper_helm" }
 
 Show-Section "Etape 2 - Gatekeeper est operationnel"
 Invoke-Cmd "helm list -n gatekeeper-system"
@@ -51,12 +57,26 @@ Show-Section "Etape 2 - Application des ConstraintTemplates et des Constraints"
 Invoke-Cmd "kubectl apply -f policies/templates/"
 Write-Host ""
 Write-Host "Attente de la creation des CRD par Gatekeeper..." -ForegroundColor DarkGray
+$allCreated = $true
 foreach ($crd in @("k8sdisallowlatesttag.constraints.gatekeeper.sh", "k8srequiredresources.constraints.gatekeeper.sh")) {
-    for ($i = 0; $i -lt 60; $i++) {
+    $ok = $false
+    for ($i = 0; $i -lt 30; $i++) {
         cmd /c "kubectl get crd $crd >NUL 2>&1"
-        if ($LASTEXITCODE -eq 0) { break }
+        if ($LASTEXITCODE -eq 0) { $ok = $true; break }
         Start-Sleep -Seconds 2
     }
+    if (-not $ok) { $allCreated = $false }
+}
+Invoke-Cmd "kubectl get constrainttemplates -o custom-columns=TEMPLATE:.metadata.name,CREE:.status.created"
+if (-not $allCreated) {
+    Write-Host ""
+    Write-Host "Les CRD n'ont pas ete creees : statut detaille des templates (erreurs de compilation Rego) :" -ForegroundColor Red
+    Invoke-Cmd "kubectl get constrainttemplate k8sdisallowlatesttag -o jsonpath={.status}"
+    Write-Host ""
+    Invoke-Cmd "kubectl get constrainttemplate k8srequiredresources -o jsonpath={.status}"
+    Write-Host ""
+    Invoke-Cmd "kubectl logs -n gatekeeper-system -l control-plane=controller-manager --tail=30"
+    Stop-WithError "ConstraintTemplates non compilees (voir ci-dessus). Envoie le journal a Claude."
 }
 Invoke-Cmd "kubectl wait --for=condition=established crd/k8sdisallowlatesttag.constraints.gatekeeper.sh crd/k8srequiredresources.constraints.gatekeeper.sh --timeout=120s"
 Invoke-Cmd "kubectl apply -f policies/constraints/"
@@ -91,7 +111,8 @@ foreach ($t in $tests) {
 
 Show-Section "Etape 2 - Test 5 : Pod cree directement (kubectl run nginx:latest)"
 Invoke-Cmd "kubectl run pod-interdit --image=nginx:latest -n tp-app"
-Write-Host ""; Write-Host "=> REJETE : les deux contraintes sont violees en meme temps" -ForegroundColor Green
+if ($LASTEXITCODE -eq 0) { Write-Host "ATTENTION : le pod a ete accepte !" -ForegroundColor Red }
+else { Write-Host ""; Write-Host "=> REJETE : les deux contraintes sont violees en meme temps" -ForegroundColor Green }
 Save-Capture "E2_11_rejet_pod_kubectl_run"
 
 Show-Section "Etape 2 - Test 6 : manifeste conforme (tag fixe + requests/limits)"
@@ -116,7 +137,7 @@ Save-Capture "E2_13_audit_gatekeeper"
 Show-Section "Etape 2 - Commit et push des politiques"
 cmd /c "git rm -q --cached --ignore-unmatch coverage.lcov >NUL 2>&1"
 Invoke-Cmd "git add -A"
-Invoke-Cmd "git commit -q -m ""feat(policies): OPA Gatekeeper - interdiction du tag latest et resources obligatoires"""
+Invoke-Cmd "git commit -q -m ""fix(policies): ConstraintTemplates en syntaxe Rego classique + verification"""
 Invoke-Cmd "git push origin HEAD"
 Invoke-Cmd "git --no-pager log --oneline -3"
 Save-Capture "E2_14_git_push_politiques"
