@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+# Couverture (regeneree par la CI)
+.coverage
+coverage.xml
+htmlcov/
+# Journaux locaux des scripts
+docs/logs/
