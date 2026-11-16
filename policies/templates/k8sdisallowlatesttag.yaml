@@ -17,23 +17,21 @@ spec:
       rego: |
         package k8sdisallowlatesttag
 
-        import rego.v1
-
         # Conteneurs d'un Pod, ou du template de Pod d'un Deployment/StatefulSet/DaemonSet/ReplicaSet
-        containers contains c if { some c in input.review.object.spec.containers }
-        containers contains c if { some c in input.review.object.spec.initContainers }
-        containers contains c if { some c in input.review.object.spec.template.spec.containers }
-        containers contains c if { some c in input.review.object.spec.template.spec.initContainers }
+        containers[c] { c := input.review.object.spec.containers[_] }
+        containers[c] { c := input.review.object.spec.initContainers[_] }
+        containers[c] { c := input.review.object.spec.template.spec.containers[_] }
+        containers[c] { c := input.review.object.spec.template.spec.initContainers[_] }
 
-        violation contains {"msg": msg} if {
-          some c in containers
+        violation[{"msg": msg}] {
+          c := containers[_]
           endswith(c.image, ":latest")
           msg := sprintf("Conteneur <%v> : le tag 'latest' est interdit (image %v). Utilisez un tag immuable (version ou SHA de commit).", [c.name, c.image])
         }
 
         # Image sans tag ni digest => Kubernetes tire implicitement "latest"
-        violation contains {"msg": msg} if {
-          some c in containers
+        violation[{"msg": msg}] {
+          c := containers[_]
           not contains(c.image, "@")
           parts := split(c.image, "/")
           not contains(parts[count(parts) - 1], ":")

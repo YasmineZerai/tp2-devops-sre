@@ -18,17 +18,15 @@ spec:
       rego: |
         package k8srequiredresources
 
-        import rego.v1
+        containers[c] { c := input.review.object.spec.containers[_] }
+        containers[c] { c := input.review.object.spec.initContainers[_] }
+        containers[c] { c := input.review.object.spec.template.spec.containers[_] }
+        containers[c] { c := input.review.object.spec.template.spec.initContainers[_] }
 
-        containers contains c if { some c in input.review.object.spec.containers }
-        containers contains c if { some c in input.review.object.spec.initContainers }
-        containers contains c if { some c in input.review.object.spec.template.spec.containers }
-        containers contains c if { some c in input.review.object.spec.template.spec.initContainers }
-
-        violation contains {"msg": msg} if {
-          some c in containers
-          some section in ["requests", "limits"]
-          some resource in ["cpu", "memory"]
+        violation[{"msg": msg}] {
+          c := containers[_]
+          section := ["requests", "limits"][_]
+          resource := ["cpu", "memory"][_]
           not c.resources[section][resource]
           msg := sprintf("Conteneur <%v> : resources.%v.%v est obligatoire", [c.name, section, resource])
         }
