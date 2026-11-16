@@ -21,6 +21,30 @@ public class TP2Win {
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    public delegate bool EnumProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder sb, int max);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+
+    // Fenetres visibles (avec titre) des processus donnes, dans l'ordre d'empilement (du dessus vers le dessous)
+    public static IntPtr[] WindowsOf(uint[] pids) {
+        System.Collections.Generic.List<IntPtr> list = new System.Collections.Generic.List<IntPtr>();
+        EnumWindows(delegate(IntPtr h, IntPtr l) {
+            if (!IsWindowVisible(h) || GetWindowTextLength(h) == 0) return true;
+            uint pid; GetWindowThreadProcessId(h, out pid);
+            if (Array.IndexOf(pids, pid) >= 0) list.Add(h);
+            return true;
+        }, IntPtr.Zero);
+        return list.ToArray();
+    }
+    public static string Title(IntPtr h) {
+        System.Text.StringBuilder sb = new System.Text.StringBuilder(512);
+        GetWindowText(h, sb, 512);
+        return sb.ToString();
+    }
 
     // Capture du contenu d'une fenetre, meme masquee par une autre (PW_RENDERFULLCONTENT = 2)
     public static Bitmap Print(IntPtr h) {
@@ -168,4 +192,72 @@ function Invoke-Cmd {
     Write-Host ""
     Write-Host "PS> $Command" -ForegroundColor Yellow
     cmd /c "$Command 2>&1" | Out-Host
+}
+
+function Get-EdgeWindows {
+    $ids = @(Get-Process msedge -ErrorAction SilentlyContinue | ForEach-Object { [uint32]$_.Id })
+    if ($ids.Count -eq 0) { return @() }
+    return [TP2Win]::WindowsOf([uint32[]]$ids)
+}
+
+function Save-BrowserCapture {
+    # Ouvre $Url dans une NOUVELLE fenetre Edge, la capture, puis ferme uniquement cette fenetre
+    # (les fenetres et onglets deja ouverts ne sont jamais touches).
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Url,
+        [int]$WaitSeconds = 12
+    )
+    $before = @(Get-EdgeWindows)
+    Start-Process "msedge.exe" -ArgumentList @("--new-window", $Url)
+    $hwnd = [IntPtr]::Zero
+    for ($i = 0; $i -lt 20 -and $hwnd -eq [IntPtr]::Zero; $i++) {
+        Start-Sleep -Milliseconds 500
+        foreach ($h in @(Get-EdgeWindows)) { if ($before -notcontains $h) { $hwnd = $h; break } }
+    }
+    if ($hwnd -eq [IntPtr]::Zero) {
+        Write-Host "[capture impossible] nouvelle fenetre Edge introuvable pour $Url" -ForegroundColor Red
+        return
+    }
+    [void][TP2Win]::ShowWindow($hwnd, 3)
+    Start-Sleep -Seconds $WaitSeconds
+    Write-Host "  page : $([TP2Win]::Title($hwnd))" -ForegroundColor DarkGray
+    Save-Bitmap (Capture-Window $hwnd) $Name
+    [void][TP2Win]::PostMessage($hwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)   # WM_CLOSE sur cette fenetre seulement
+    Start-Sleep -Seconds 1
+}
+
+function Wait-GitHubRun {
+    # Attend la fin du workflow GitHub Actions declenche par le commit $Sha (API publique GitHub)
+    param([Parameter(Mandatory = $true)][string]$Sha, [string]$Event = "", [int]$TimeoutMinutes = 15)
+    $repo = "YasmineZerai/tp2-devops-sre"
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    $run = $null
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $url = "https://api.github.com/repos/$repo/actions/runs?head_sha=$Sha&per_page=5"
+            if ($Event) { $url += "&event=$Event" }
+            $runs = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = "tp2-script" }
+            $run = $runs.workflow_runs | Select-Object -First 1
+        } catch { $run = $null }
+        if ($run) {
+            Write-Host ("  [{0}] workflow '{1}' : {2} {3}" -f (Get-Date -Format HH:mm:ss), $run.name, $run.status, $run.conclusion)
+            if ($run.status -eq "completed") { return $run }
+        } else {
+            Write-Host ("  [{0}] en attente du demarrage du workflow..." -f (Get-Date -Format HH:mm:ss))
+        }
+        Start-Sleep -Seconds 20
+    }
+    return $run
+}
+
+function Show-RunJobs($run) {
+    $jobs = Invoke-RestMethod -Uri "https://api.github.com/repos/YasmineZerai/tp2-devops-sre/actions/runs/$($run.id)/jobs" -Headers @{ "User-Agent" = "tp2-script" }
+    foreach ($j in $jobs.jobs) {
+        $color = if ($j.conclusion -eq "success") { "Green" } elseif ($j.conclusion -eq "failure") { "Red" } else { "Yellow" }
+        Write-Host ("  {0,-40} {1}" -f $j.name, $j.conclusion) -ForegroundColor $color
+        foreach ($st in $j.steps) {
+            Write-Host ("      - {0,-60} {1}" -f $st.name, $st.conclusion) -ForegroundColor DarkGray
+        }
+    }
 }

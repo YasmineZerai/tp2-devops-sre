@@ -11,3 +11,5 @@ htmlcov/
 # Journaux locaux des scripts
 docs/logs/
 coverage.lcov
+# Secrets locaux (jamais commites)
+.secrets/

@@ -1,0 +1,59 @@
+# Pipeline CI - TP2 DevOps Avance
+# Lint & Test -> SonarQube Analysis & Quality Gate -> (etape 3 : Build -> Trivy -> Push)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installation des dependances
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: |
+          ruff check app tests
+          ruff format --check app tests
+
+      - name: Tests unitaires + couverture (seuil 85 %)
+        run: pytest --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=85
+
+      - name: Publication du rapport de couverture (Cobertura)
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage
+          path: coverage.xml
+
+  sonar:
+    name: SonarQube Analysis & Quality Gate
+    needs: lint-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # historique complet : necessaire pour le calcul du "new code"
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: coverage
+
+      - name: Analyse SonarQube Cloud + Quality Gate (bloquante)
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
