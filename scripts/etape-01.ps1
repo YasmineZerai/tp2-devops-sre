@@ -43,12 +43,12 @@ Save-Capture "E1_01_prerequis_outils"
 Show-Section "Etape 0 - Creation du cluster Kubernetes (Kind)"
 $clusters = kind get clusters 2>$null
 if ($clusters -contains "tp2") {
-    Write-Host "Le cluster 'tp2' existe deja, on le reutilise."
+    Write-Host "Le cluster 'tp2' existe deja, on le reutilise (capture E1_02 deja faite a sa creation)."
 } else {
     Invoke-Step "kind create cluster --config kind-config.yaml --wait 180s"
     if ($LASTEXITCODE -ne 0) { Stop-WithError "La creation du cluster Kind a echoue." }
+    Save-Capture "E1_02_creation_cluster_kind"
 }
-Save-Capture "E1_02_creation_cluster_kind"
 
 foreach ($ns in @("tp-app", "monitoring", "argocd")) {
     kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f - | Out-Null
@@ -102,13 +102,13 @@ if (-not $covOk) { Stop-WithError "Couverture inferieure a 85 % ou tests en eche
 Show-Section "Etape 1 - Construction de l'image Docker"
 Invoke-Step "docker build -t catalog-api:dev ."
 if ($LASTEXITCODE -ne 0) { Stop-WithError "Le build Docker a echoue." }
-Invoke-Step "docker images catalog-api"
+Invoke-Step "docker image ls catalog-api:dev"
 Save-Capture "E1_07_docker_build"
 
 # ---------------------------------------------------------------------------
 # 8. Test des endpoints dans le conteneur
 # ---------------------------------------------------------------------------
-docker rm -f catalog-api-test 2>$null | Out-Null
+cmd /c "docker rm -f catalog-api-test >NUL 2>&1"
 docker run -d --name catalog-api-test -p 8000:8000 catalog-api:dev | Out-Null
 $ready = $false
 for ($i = 0; $i -lt 30; $i++) {
@@ -144,7 +144,7 @@ Show-Section "Etape 1 - Endpoint /metrics au format Prometheus"
 Write-Host "PS> curl.exe -s http://localhost:8000/metrics | Select-String 'http_requests_total|le=`"0.2`"'" -ForegroundColor Yellow
 curl.exe -s http://localhost:8000/metrics | Select-String -Pattern '^http_requests_total|le="0.2"' | ForEach-Object { $_.Line }
 Save-Capture "E1_09_metrics_prometheus"
-docker rm -f catalog-api-test | Out-Null
+cmd /c "docker rm -f catalog-api-test >NUL 2>&1"
 
 # ---------------------------------------------------------------------------
 # 9. Commit et push
@@ -157,14 +157,16 @@ if (-not (git config user.email)) {
 Invoke-Step "git add -A"
 Invoke-Step "git commit -q -m 'feat: microservice catalog-api, tests (couverture > 85 %), Dockerfile, cluster Kind'"
 Invoke-Step "git push origin HEAD"
-Invoke-Step "git log --oneline -5"
+Invoke-Step "git remote -v"
+Invoke-Step "git status -sb"
+Invoke-Step "git --no-pager log --oneline -5"
 Save-Capture "E1_10_git_push"
 
 # ---------------------------------------------------------------------------
 # 10. Rapport HTML de couverture (en dernier : il ouvre le navigateur)
 # ---------------------------------------------------------------------------
 Start-Process "$Root\htmlcov\index.html"
-Save-Capture "E1_11_rapport_couverture_html" -DelaySeconds 5
+Save-WindowCapture -Name "E1_11_rapport_couverture_html" -TitleLike "Coverage report"
 
 Stop-Transcript | Out-Null
 Write-Host ""
