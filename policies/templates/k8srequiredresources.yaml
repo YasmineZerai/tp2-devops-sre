@@ -1,0 +1,34 @@
+# ConstraintTemplate 2 : requests et limits CPU/memoire obligatoires
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredresources
+  annotations:
+    description: >-
+      Exige resources.requests.cpu, resources.requests.memory, resources.limits.cpu
+      et resources.limits.memory sur chaque conteneur (planification et protection
+      contre les voisins bruyants).
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredResources
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredresources
+
+        import rego.v1
+
+        containers contains c if { some c in input.review.object.spec.containers }
+        containers contains c if { some c in input.review.object.spec.initContainers }
+        containers contains c if { some c in input.review.object.spec.template.spec.containers }
+        containers contains c if { some c in input.review.object.spec.template.spec.initContainers }
+
+        violation contains {"msg": msg} if {
+          some c in containers
+          some section in ["requests", "limits"]
+          some resource in ["cpu", "memory"]
+          not c.resources[section][resource]
+          msg := sprintf("Conteneur <%v> : resources.%v.%v est obligatoire", [c.name, section, resource])
+        }

@@ -1,0 +1,41 @@
+# ConstraintTemplate 1 : interdire le tag "latest" (explicite ou implicite)
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdisallowlatesttag
+  annotations:
+    description: >-
+      Refuse tout conteneur dont l'image utilise le tag "latest", ou n'a ni tag
+      ni digest (ce qui revient a "latest"). Garantit des deploiements reproductibles.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDisallowLatestTag
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdisallowlatesttag
+
+        import rego.v1
+
+        # Conteneurs d'un Pod, ou du template de Pod d'un Deployment/StatefulSet/DaemonSet/ReplicaSet
+        containers contains c if { some c in input.review.object.spec.containers }
+        containers contains c if { some c in input.review.object.spec.initContainers }
+        containers contains c if { some c in input.review.object.spec.template.spec.containers }
+        containers contains c if { some c in input.review.object.spec.template.spec.initContainers }
+
+        violation contains {"msg": msg} if {
+          some c in containers
+          endswith(c.image, ":latest")
+          msg := sprintf("Conteneur <%v> : le tag 'latest' est interdit (image %v). Utilisez un tag immuable (version ou SHA de commit).", [c.name, c.image])
+        }
+
+        # Image sans tag ni digest => Kubernetes tire implicitement "latest"
+        violation contains {"msg": msg} if {
+          some c in containers
+          not contains(c.image, "@")
+          parts := split(c.image, "/")
+          not contains(parts[count(parts) - 1], ":")
+          msg := sprintf("Conteneur <%v> : image sans tag explicite (equivaut a 'latest') : %v", [c.name, c.image])
+        }

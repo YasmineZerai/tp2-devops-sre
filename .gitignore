@@ -10,3 +10,4 @@ coverage.xml
 htmlcov/
 # Journaux locaux des scripts
 docs/logs/
+coverage.lcov

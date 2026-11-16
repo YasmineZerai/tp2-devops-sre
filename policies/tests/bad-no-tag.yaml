@@ -1,0 +1,20 @@
+# NON CONFORME : image sans tag = latest implicite (resources OK)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-no-tag
+  namespace: tp-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: bad-no-tag }
+  template:
+    metadata:
+      labels: { app: bad-no-tag }
+    spec:
+      containers:
+        - name: web
+          image: nginx
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 200m, memory: 128Mi }

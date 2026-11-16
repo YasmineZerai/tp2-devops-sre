@@ -64,6 +64,7 @@ public class TP2Win {
 "@
 }
 [void][TP2Win]::SetProcessDPIAware()
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}   # accents corrects
 
 $script:RepoRoot    = Split-Path -Parent $PSScriptRoot
 $script:CapturesDir = Join-Path $script:RepoRoot "docs\captures"
@@ -158,4 +159,13 @@ function Invoke-Step {
     Write-Host ""
     Write-Host "PS> $Command" -ForegroundColor Yellow
     Invoke-Expression $Command | Out-Host
+}
+
+function Invoke-Cmd {
+    # Comme Invoke-Step, mais pour une commande native dont on veut aussi voir les erreurs
+    # (stderr) en texte normal : utile pour montrer un refus de l'API Kubernetes.
+    param([Parameter(Mandatory = $true)][string]$Command)
+    Write-Host ""
+    Write-Host "PS> $Command" -ForegroundColor Yellow
+    cmd /c "$Command 2>&1" | Out-Host
 }

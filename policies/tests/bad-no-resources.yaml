@@ -1,0 +1,18 @@
+# NON CONFORME : aucune resources (tag OK)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-no-resources
+  namespace: tp-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: bad-no-resources }
+  template:
+    metadata:
+      labels: { app: bad-no-resources }
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+

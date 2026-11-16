@@ -1,0 +1,19 @@
+# NON CONFORME : requests sans limits (tag OK)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-missing-limits
+  namespace: tp-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: bad-missing-limits }
+  template:
+    metadata:
+      labels: { app: bad-missing-limits }
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }

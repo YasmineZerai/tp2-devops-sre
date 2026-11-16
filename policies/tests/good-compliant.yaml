@@ -1,0 +1,20 @@
+# CONFORME : tag fixe + requests et limits
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: good-compliant
+  namespace: tp-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: good-compliant }
+  template:
+    metadata:
+      labels: { app: good-compliant }
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
