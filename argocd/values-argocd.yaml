@@ -1,0 +1,20 @@
+# ArgoCD (chart argo/argo-cd) - configuration locale pour le TP
+configs:
+  params:
+    server.insecure: true          # HTTP simple sur le NodePort (cluster local)
+  cm:
+    timeout.reconciliation: 60s    # verification du depot Git toutes les 60 s
+    users.anonymous.enabled: "true"
+  rbac:
+    policy.default: role:readonly  # consultation de l'UI sans mot de passe (lecture seule)
+
+server:
+  service:
+    type: NodePort
+    nodePortHttp: 30443            # http://localhost:30443 (kind-config.yaml)
+    nodePortHttps: 30444
+
+dex:
+  enabled: false
+notifications:
+  enabled: false

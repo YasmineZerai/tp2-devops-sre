@@ -1,0 +1,33 @@
+# Valeurs du chart catalog-api
+replicaCount: 2
+
+image:
+  repository: ghcr.io/yasminezerai/catalog-api
+  # Tag immuable = SHA du commit. Sur la branche "deploy", il est reecrit par la CI
+  # a chaque push sur main ; ArgoCD deploie alors automatiquement la nouvelle version.
+  tag: "a-definir-par-la-ci"
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 8000
+  nodePort: 30080   # expose sur http://localhost:30080 (kind-config.yaml)
+
+# Obligatoire : la politique Gatekeeper K8sRequiredResources refuse tout conteneur sans requests/limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+env:
+  FLAKY_ERROR_RATE: "0.1"
+  SLOW_RATE: "0.1"
+
+# Decouverte automatique par Prometheus (etape 4)
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8000"
+  prometheus.io/path: /metrics

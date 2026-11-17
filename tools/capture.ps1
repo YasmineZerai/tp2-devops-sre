@@ -206,7 +206,8 @@ function Save-BrowserCapture {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$Url,
-        [int]$WaitSeconds = 12
+        [int]$WaitSeconds = 12,
+        [string]$Keys = ""      # touches envoyees avant la capture (ex. "^{-}{END}" : dezoom + bas de page)
     )
     $before = @(Get-EdgeWindows)
     Start-Process "msedge.exe" -ArgumentList @("--new-window", $Url)
@@ -222,7 +223,19 @@ function Save-BrowserCapture {
     [void][TP2Win]::ShowWindow($hwnd, 3)
     Start-Sleep -Seconds $WaitSeconds
     Write-Host "  page : $([TP2Win]::Title($hwnd))" -ForegroundColor DarkGray
+    if ($Keys) {
+        [TP2Win]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [TP2Win]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+        [void][TP2Win]::SetForegroundWindow($hwnd)
+        Start-Sleep -Milliseconds 800
+        [System.Windows.Forms.SendKeys]::SendWait($Keys)
+        Start-Sleep -Seconds 3
+    }
     Save-Bitmap (Capture-Window $hwnd) $Name
+    if ($Keys -and $Keys.Contains("^{-}")) {
+        [void][TP2Win]::SetForegroundWindow($hwnd)
+        [System.Windows.Forms.SendKeys]::SendWait("^0")   # remet le zoom du site a 100 %
+        Start-Sleep -Milliseconds 500
+    }
     [void][TP2Win]::PostMessage($hwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)   # WM_CLOSE sur cette fenetre seulement
     Start-Sleep -Seconds 1
 }
