@@ -10,6 +10,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# DEMO TRIVY : dependance volontairement vulnerable (Django 2.2, CVE critiques)
+RUN pip install --no-cache-dir "django==2.2"
 COPY app/ app/
 
 # Utilisateur non-root (bonne pratique sécurité, vérifiée par Trivy/Sonar)
