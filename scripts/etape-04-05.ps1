@@ -69,32 +69,37 @@ function Set-DeployValue([string]$wt, [string]$pattern, [string]$replacement, [s
 # 0. Pre-requis
 # ===========================================================================
 cmd /c "git checkout -q main 2>&1" | Out-Null
-cmd /c "kubectl get nodes >NUL 2>&1"
-if ($LASTEXITCODE -ne 0) { cmd /c "docker start tp2-control-plane >NUL 2>&1"; Start-Sleep -Seconds 40 }
+cmd /c "git fetch -q origin 2>&1" | Out-Null
+if (-not (Use-Tp2Cluster)) { Note-Problem "le cluster Kind tp2 ne repond pas" }
 $freeGb = [math]::Round((Get-PSDrive C).Free / 1GB, 1)
 Write-Host "Espace disque libre : $freeGb Go" -ForegroundColor $(if ($freeGb -lt 10) { "Yellow" } else { "Green" })
 
 # ===========================================================================
 # ETAPE 4 - A. Instrumentation de l'application
 # ===========================================================================
-Show-Section "Etape 4 - Instrumentation OpenTelemetry (app/telemetry.py)"
-Write-Host ""
-Write-Host "PS> Get-Content app\telemetry.py" -ForegroundColor Yellow
-Get-Content app\telemetry.py | Select-Object -Skip 22 | Out-Host
-Save-Capture "E4_01_code_instrumentation_otel"
+$appSha = "$(git log origin/main -1 --format=%H --grep "feat(observabilite)" 2>$null)".Trim()
+if ($appSha -and (Test-Path "$Root\docs\captures\E4_03_push_version_instrumentee.png")) {
+    Write-Host "Version instrumentee deja poussee ($appSha) : captures E4_01 a E4_03 conservees" -ForegroundColor Green
+} else {
+    Show-Section "Etape 4 - Instrumentation OpenTelemetry (app/telemetry.py)"
+    Write-Host ""
+    Write-Host "PS> Get-Content app\telemetry.py" -ForegroundColor Yellow
+    Get-Content app\telemetry.py | Select-Object -Skip 22 | Out-Host
+    Save-Capture "E4_01_code_instrumentation_otel"
 
-Show-Section "Etape 4 - Tests de l'instrumentation (logs JSON correles aux traces)"
-Invoke-Step "& '$py' -m pip install --quiet -r requirements.txt -r requirements-dev.txt"
-Invoke-Step "& '$py' -m pytest -q --cov=app --cov-report=term-missing --cov-fail-under=85 -p no:cacheprovider"
-if ($LASTEXITCODE -ne 0) { Note-Problem "tests locaux" }
-Save-Capture "E4_02_tests_instrumentation"
+    Show-Section "Etape 4 - Tests de l'instrumentation (logs JSON correles aux traces)"
+    Invoke-Step "& '$py' -m pip install --quiet -r requirements.txt -r requirements-dev.txt"
+    Invoke-Step "& '$py' -m pytest -q --cov=app --cov-report=term-missing --cov-fail-under=85 -p no:cacheprovider"
+    if ($LASTEXITCODE -ne 0) { Note-Problem "tests locaux" }
+    Save-Capture "E4_02_tests_instrumentation"
 
-Show-Section "Etape 4 - Push : nouvelle version instrumentee (CI -> GHCR -> branche deploy -> ArgoCD)"
-Invoke-Cmd "git add -A"
-Invoke-Cmd "git commit -q -m ""feat(observabilite): traces OpenTelemetry, logs JSON correles, stack Prometheus/Loki/Tempo, SLO et test k6"""
-Invoke-Cmd "git push origin main"
-$appSha = (git rev-parse HEAD).Trim()
-Save-Capture "E4_03_push_version_instrumentee"
+    Show-Section "Etape 4 - Push : nouvelle version instrumentee (CI -> GHCR -> branche deploy -> ArgoCD)"
+    Invoke-Cmd "git add -A"
+    Invoke-Cmd "git commit -q -m ""feat(observabilite): traces OpenTelemetry, logs JSON correles, stack Prometheus/Loki/Tempo, SLO et test k6"""
+    Invoke-Cmd "git push origin main"
+    $appSha = (git rev-parse HEAD).Trim()
+    Save-Capture "E4_03_push_version_instrumentee"
+}
 
 # ===========================================================================
 # ETAPE 4 - B. Stack d'observabilite (pendant que la CI tourne)

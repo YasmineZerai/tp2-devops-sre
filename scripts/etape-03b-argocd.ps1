@@ -32,14 +32,7 @@ cmd /c "git fetch -q origin 2>&1" | Out-Null
 # ---------------------------------------------------------------------------
 # 0. Cluster disponible ?
 # ---------------------------------------------------------------------------
-cmd /c "kubectl get nodes >NUL 2>&1"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Cluster indisponible : redemarrage du noeud Kind..." -ForegroundColor Yellow
-    cmd /c "docker start tp2-control-plane >NUL 2>&1"
-    Start-Sleep -Seconds 40
-    cmd /c "kubectl get nodes >NUL 2>&1"
-    if ($LASTEXITCODE -ne 0) { Stop-WithError "Le cluster Kind ne repond pas. Verifie que Docker Desktop est lance." }
-}
+if (-not (Use-Tp2Cluster)) { Stop-WithError "Le cluster Kind tp2 ne repond pas. Verifie que Docker Desktop est lance." }
 
 # ---------------------------------------------------------------------------
 # 0b. Pre-requis (repris si le cluster a ete recree) : namespace tp-app, Gatekeeper
@@ -105,7 +98,7 @@ if ($prRun) {
     $jobs = Invoke-RestMethod -Uri "https://api.github.com/repos/YasmineZerai/tp2-devops-sre/actions/runs/$($prRun.id)/jobs" -Headers @{ "User-Agent" = "tp2-script" }
     $build = $jobs.jobs | Where-Object { $_.name -like "Build*" } | Select-Object -First 1
     $stepGate = ($build.steps | Where-Object { $_.name -like "*porte bloquante*" } | Select-Object -First 1).number
-    Save-BrowserCapture -Name "E3_17_pr_trivy_critical_log" -Url "$($build.html_url)#step:$($stepGate):1" -WaitSeconds 18
+    Save-BrowserCapture -Name "E3_17_pr_trivy_critical_log" -Url "$($build.html_url)#step:$($stepGate):1" -WaitSeconds 35
     Save-BrowserCapture -Name "E3_18_pr_trivy_checks_github" -Url "$Repo/pull/2#:~:text=Some%20checks%20were%20not%20successful" -WaitSeconds 18
 } else {
     Write-Host "Workflow de la PR #2 introuvable : captures Trivy ignorees." -ForegroundColor Yellow

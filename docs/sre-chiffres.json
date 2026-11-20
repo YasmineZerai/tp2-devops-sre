@@ -1,0 +1,19 @@
+﻿{
+    "debut_test":  "19:44:43",
+    "debut_incident":  "19:47:19",
+    "alertes":  "19:54:24",
+    "rollback":  "19:55:22",
+    "fin_test":  "19:55:55",
+    "fenetre_minutes":  15,
+    "requetes_totales":  null,
+    "requetes_5xx":  null,
+    "p95_max_s":  null,
+    "part_sous_200ms_min":  null,
+    "burn_rate_5m_max":  null,
+    "burn_rate_1h_max":  null,
+    "burn_rate_6h_max":  null,
+    "error_budget_restant":  null,
+    "alerte_critique":  false,
+    "alerte_warning":  false,
+    "slack":  true
+}

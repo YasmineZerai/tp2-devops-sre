@@ -1,4 +1,4 @@
-﻿﻿# tools/capture.ps1 - fonctions partagees par les scripts d'etape
+﻿# tools/capture.ps1 - fonctions partagees par les scripts d'etape
 #   Save-Capture        : capture la fenetre du terminal qui execute le script (meme si elle est derriere)
 #   Save-WindowCapture  : capture une autre fenetre (navigateur...) reperee par son titre
 #   Show-Section        : efface la console et affiche un titre
@@ -273,4 +273,41 @@ function Show-RunJobs($run) {
             Write-Host ("      - {0,-60} {1}" -f $st.name, $st.conclusion) -ForegroundColor DarkGray
         }
     }
+}
+
+
+function Start-DockerDesktop {
+    # Lance Docker Desktop s'il n'est pas demarre, puis attend que le moteur reponde (max 4 min)
+    cmd /c "docker info >NUL 2>&1"
+    if ($LASTEXITCODE -eq 0) { return $true }
+    Write-Host "Docker Desktop n'est pas lance : demarrage automatique (1 a 3 minutes)..." -ForegroundColor Yellow
+    $exe = "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe"
+    if (Test-Path $exe) { Start-Process $exe } else { cmd /c "docker desktop start >NUL 2>&1" }
+    for ($i = 0; $i -lt 48; $i++) {
+        Start-Sleep -Seconds 5
+        cmd /c "docker info >NUL 2>&1"
+        if ($LASTEXITCODE -eq 0) { Write-Host "Docker Desktop est pret." -ForegroundColor Green; Start-Sleep -Seconds 10; return $true }
+    }
+    Write-Host "Docker Desktop ne repond toujours pas." -ForegroundColor Red
+    return $false
+}
+
+function Use-Tp2Cluster {
+    # Le TP utilise UNIQUEMENT le cluster Kind "tp2" (ports 30080/30300/30900/30903/30443 mappes sur localhost)
+    if (-not (Start-DockerDesktop)) { return $false }
+    $clusters = (kind get clusters 2>$null) -join " "
+    if ($clusters -notmatch "\btp2\b") {
+        Write-Host "Cluster Kind tp2 absent : creation..." -ForegroundColor Yellow
+        cmd /c "kind create cluster --config kind-config.yaml --wait 180s 2>&1" | Out-Host
+    }
+    cmd /c "docker start tp2-control-plane >NUL 2>&1"
+    cmd /c "kubectl config use-context kind-tp2 >NUL 2>&1"
+    for ($i = 0; $i -lt 36; $i++) {
+        $n = (kubectl get nodes -o name 2>$null) -join " "
+        if ($n -match "tp2-control-plane") { break }
+        Start-Sleep -Seconds 5
+    }
+    $ctx = "$(kubectl config current-context 2>$null)".Trim()
+    Write-Host "Cluster Kubernetes utilise : $ctx" -ForegroundColor Cyan
+    return ($ctx -eq "kind-tp2")
 }
