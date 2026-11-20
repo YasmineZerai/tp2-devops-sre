@@ -1,0 +1,101 @@
+# SLI / SLO / Error Budget / Burn Rate - catalog-api (TP2 etape 5)
+# SLO disponibilite : 99,5 % sur 30 jours  => Error Budget = 0,5 % des requetes
+# SLO latence       : 95 % des requetes < 200 ms (p95 <= 200 ms)
+# Burn rate = taux d'erreur observe / 0,005
+#   Critical : 2 % du budget en 1 h  => burn rate 14,4 (fenetres 1h ET 5m)
+#   Warning  : 5 % du budget en 6 h  => burn rate 6    (fenetres 6h ET 30m)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: catalog-api-slo
+  namespace: monitoring
+  labels:
+    app: catalog-api
+spec:
+  groups:
+    - name: catalog-api-sli
+      interval: 15s
+      rules:
+        # --- SLI disponibilite : ratio d'erreurs 5xx par fenetre ---
+        - record: sli:errors:ratio_rate5m
+          expr: |
+            sum(rate(http_requests_total{namespace="tp-app",status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{namespace="tp-app"}[5m]))
+        - record: sli:errors:ratio_rate30m
+          expr: |
+            sum(rate(http_requests_total{namespace="tp-app",status=~"5.."}[30m]))
+            / sum(rate(http_requests_total{namespace="tp-app"}[30m]))
+        - record: sli:errors:ratio_rate1h
+          expr: |
+            sum(rate(http_requests_total{namespace="tp-app",status=~"5.."}[1h]))
+            / sum(rate(http_requests_total{namespace="tp-app"}[1h]))
+        - record: sli:errors:ratio_rate6h
+          expr: |
+            sum(rate(http_requests_total{namespace="tp-app",status=~"5.."}[6h]))
+            / sum(rate(http_requests_total{namespace="tp-app"}[6h]))
+        - record: sli:availability:ratio_rate5m
+          expr: 1 - sli:errors:ratio_rate5m
+        # --- SLI latence : part des requetes servies en moins de 200 ms ---
+        - record: sli:latency_good:ratio_rate5m
+          expr: |
+            sum(rate(http_request_duration_seconds_bucket{namespace="tp-app",le="0.2"}[5m]))
+            / sum(rate(http_request_duration_seconds_count{namespace="tp-app"}[5m]))
+        - record: sli:latency:p95_5m
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace="tp-app"}[5m])))
+        # --- Burn rates ---
+        - record: slo:burn_rate:5m
+          expr: sli:errors:ratio_rate5m / 0.005
+        - record: slo:burn_rate:30m
+          expr: sli:errors:ratio_rate30m / 0.005
+        - record: slo:burn_rate:1h
+          expr: sli:errors:ratio_rate1h / 0.005
+        - record: slo:burn_rate:6h
+          expr: sli:errors:ratio_rate6h / 0.005
+        # --- Error Budget restant sur la fenetre SLO de 30 jours ---
+        - record: slo:error_budget:remaining_ratio
+          expr: |
+            1 - (
+              (sum(increase(http_requests_total{namespace="tp-app",status=~"5.."}[30d]))
+               / sum(increase(http_requests_total{namespace="tp-app"}[30d])))
+              / 0.005
+            )
+
+    - name: catalog-api-burn-rate-alerts
+      rules:
+        - alert: ErrorBudgetBurnRateCritical
+          expr: |
+            slo:burn_rate:1h > 14.4
+            and
+            slo:burn_rate:5m > 14.4
+          for: 1m
+          labels:
+            severity: critical
+            slo: availability
+            service: catalog-api
+          annotations:
+            summary: "PAGE - catalog-api consomme son Error Budget 14,4x trop vite (2 % du budget en 1 h)"
+            description: "Burn rate 1h = {{ $value | printf \"%.1f\" }}. SLO 99,5 % menace : intervention immediate."
+        - alert: ErrorBudgetBurnRateWarning
+          expr: |
+            slo:burn_rate:6h > 6
+            and
+            slo:burn_rate:30m > 6
+          for: 1m
+          labels:
+            severity: warning
+            slo: availability
+            service: catalog-api
+          annotations:
+            summary: "catalog-api consomme son Error Budget 6x trop vite (5 % du budget en 6 h)"
+            description: "Burn rate 6h = {{ $value | printf \"%.1f\" }}. A traiter dans la journee."
+        - alert: LatencySLOBreached
+          expr: sli:latency:p95_5m > 0.2
+          for: 2m
+          labels:
+            severity: warning
+            slo: latency
+            service: catalog-api
+          annotations:
+            summary: "catalog-api : latence p95 > 200 ms"
+            description: "p95 sur 5 min = {{ $value | humanizeDuration }}."

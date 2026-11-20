@@ -16,12 +16,17 @@ import random
 import time
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from opentelemetry import trace
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger("catalog-api")
+from app.telemetry import setup_telemetry
 
-app = FastAPI(title="catalog-api", version="1.0.0")
+logger = logging.getLogger("catalog-api")
+tracer = trace.get_tracer("catalog-api")
+
+app = FastAPI(title="catalog-api", version="1.1.0")
+setup_telemetry(app)  # traces OTLP -> Tempo, metriques OTel, logs JSON avec trace_id
 
 # --- Métriques Prometheus (méthode RED) -------------------------------------
 # Le bucket 0.2 s correspond exactement au seuil du SLO de latence (p95 <= 200 ms).
@@ -107,13 +112,16 @@ async def checkout(order: Order):
         delay = random.uniform(0.5, 1.5)  # cas lent : casse le SLO de latence
     else:
         delay = random.uniform(0.02, 0.12)  # cas nominal
-    await simulate_processing(delay)
+    with tracer.start_as_current_span("process_payment") as span:
+        span.set_attribute("checkout.items", len(order.items))
+        span.set_attribute("checkout.slow_path", delay >= 0.5)
+        await simulate_processing(delay)
     total = sum(
         PRODUCTS[item.product_id]["price"] * item.quantity
         for item in order.items
         if item.product_id in PRODUCTS
     )
-    logger.info("checkout confirmé, total=%.2f", total)
+    logger.info("checkout confirme, total=%.2f, latence simulee=%.3fs", total, delay)
     return {"status": "confirmed", "total": round(total, 2)}
 
 

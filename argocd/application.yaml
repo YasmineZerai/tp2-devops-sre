@@ -17,6 +17,8 @@ spec:
     automated:
       prune: true      # supprime ce qui n'est plus dans Git
       selfHeal: true   # corrige toute derive manuelle du cluster
+    syncOptions:
+      - CreateNamespace=true   # cree le namespace tp-app s'il n'existe pas
     retry:
       limit: 2
       backoff:

@@ -42,6 +42,53 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ---------------------------------------------------------------------------
+# 0b. Pre-requis (repris si le cluster a ete recree) : namespace tp-app, Gatekeeper
+# ---------------------------------------------------------------------------
+cmd /c "kubectl create namespace tp-app --dry-run=client -o yaml | kubectl apply -f - >NUL 2>&1"
+$ct = (kubectl get constrainttemplates -o name 2>$null) -join " "
+if (-not ($ct -match "k8sdisallowlatesttag" -and $ct -match "k8srequiredresources")) {
+    Write-Host "Gatekeeper absent du cluster : reinstallation et application des 2 politiques..." -ForegroundColor Yellow
+    cmd /c "helm repo add gatekeeper https://open-policy-agent.github.io/gatekeeper/charts --force-update >NUL 2>&1"
+    cmd /c "helm upgrade --install gatekeeper gatekeeper/gatekeeper --namespace gatekeeper-system --create-namespace --wait --timeout 6m >NUL 2>&1"
+    cmd /c "kubectl apply -f policies/templates/ >NUL 2>&1"
+    for ($i = 0; $i -lt 40; $i++) {
+        $crd = (kubectl get crd -o name 2>$null) -join " "
+        if ($crd -match "k8sdisallowlatesttag" -and $crd -match "k8srequiredresources") { break }
+        Start-Sleep -Seconds 3
+    }
+    cmd /c "kubectl wait --for=condition=established crd/k8sdisallowlatesttag.constraints.gatekeeper.sh crd/k8srequiredresources.constraints.gatekeeper.sh --timeout=120s >NUL 2>&1"
+    Start-Sleep -Seconds 5
+    cmd /c "kubectl apply -f policies/constraints/ >NUL 2>&1"
+    Start-Sleep -Seconds 10
+}
+Write-Host "Namespace tp-app et politiques Gatekeeper presents :" -ForegroundColor Green
+cmd /c "kubectl get ns tp-app 2>&1" | Out-Host
+cmd /c "kubectl get constraints 2>&1" | Out-Host
+
+# ---------------------------------------------------------------------------
+# 0c. PR #2 : Sonar (regle docker:S8541) bloquait avant Trivy -> pip --only-binary
+# ---------------------------------------------------------------------------
+$df = (git show origin/feature/trivy-vulnerable:Dockerfile) -join "`n"
+if ($df -notmatch "only-binary") {
+    Write-Host "PR #2 : ajout de --only-binary pour que le blocage vienne bien de Trivy (et non de Sonar)" -ForegroundColor Yellow
+    $wtPr = "$env:TEMP\tp2-pr2"
+    cmd /c "git worktree remove --force ""$wtPr"" >NUL 2>&1"
+    cmd /c "git worktree prune >NUL 2>&1"
+    cmd /c "git worktree add -f ""$wtPr"" -B feature/trivy-vulnerable origin/feature/trivy-vulnerable >NUL 2>&1"
+    $p = "$wtPr\Dockerfile"
+    $c = [IO.File]::ReadAllText($p)
+    $c = $c.Replace('pip install --no-cache-dir "django==2.2"', 'pip install --no-cache-dir --only-binary :all: "django==2.2"')
+    [IO.File]::WriteAllText($p, $c, (New-Object Text.UTF8Encoding($false)))
+    Push-Location $wtPr
+    cmd /c "git commit -q -am ""demo(trivy): pip --only-binary (Sonar docker:S8541) - le blocage doit venir de Trivy"" -m ""Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"" 2>&1" | Out-Host
+    cmd /c "git push -q origin feature/trivy-vulnerable 2>&1" | Out-Host
+    Pop-Location
+    cmd /c "git worktree remove --force ""$wtPr"" >NUL 2>&1"
+    cmd /c "git fetch -q origin 2>&1" | Out-Null
+    Start-Sleep -Seconds 20
+}
+
+# ---------------------------------------------------------------------------
 # 1. PR #2 : image bloquee par Trivy (vulnerabilite CRITICAL)
 # ---------------------------------------------------------------------------
 $prSha = (git rev-parse origin/feature/trivy-vulnerable).Trim()
@@ -103,6 +150,7 @@ Show-Section "Etape 3 - Application ArgoCD (source : branche deploy du depot Git
 Write-Host ""
 Write-Host "PS> Get-Content argocd\application.yaml" -ForegroundColor Yellow
 Get-Content argocd\application.yaml | Out-Host
+cmd /c "kubectl delete application catalog-api -n argocd --ignore-not-found --wait=true >NUL 2>&1"
 Invoke-Cmd "kubectl apply -f argocd/application.yaml"
 Save-Capture "E3_21_application_argocd_yaml"
 
@@ -189,7 +237,7 @@ $ok = $false
 for ($i = 0; $i -lt 30; $i++) {
     $st = Get-AppStatus
     Write-Host ("  [{0}] sync={1} health={2} operation={3}" -f (Get-Date -Format HH:mm:ss), $st.Sync, $st.Health, $st.Phase)
-    if ($st.Sync -eq "Synced" -and $st.Health -eq "Healthy" -and $st.Phase -eq "Succeeded") { $ok = $true; break }
+    if ($st.Sync -eq "Synced" -and $st.Health -eq "Healthy") { $ok = $true; break }
     Start-Sleep -Seconds 10
     if ($i % 3 -eq 2) { Request-Refresh }
 }

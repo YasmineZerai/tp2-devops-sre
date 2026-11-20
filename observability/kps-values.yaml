@@ -1,0 +1,107 @@
+# kube-prometheus-stack : Prometheus + Alertmanager + Grafana (TP2 - etape 4/5)
+# Composants inutiles sur Kind desactives pour economiser la RAM.
+defaultRules:
+  create: false
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+nodeExporter:
+  enabled: false
+prometheus-node-exporter:
+  hostRootFsMount:
+    enabled: false
+
+prometheus:
+  service:
+    type: NodePort
+    nodePort: 30900                     # http://localhost:30900
+  prometheusSpec:
+    retention: 2d
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    ruleSelectorNilUsesHelmValues: false          # lit toutes les PrometheusRule du cluster
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+      limits: { memory: 1536Mi }
+    additionalScrapeConfigs:
+      - job_name: kubernetes-pods               # pods annotes prometheus.io/scrape=true
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            target_label: app
+
+alertmanager:
+  service:
+    type: NodePort
+    nodePort: 30903                     # http://localhost:30903
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+
+grafana:
+  admin:
+    existingSecret: grafana-admin
+  service:
+    type: NodePort
+    nodePort: 30300                     # http://localhost:30300
+  grafana.ini:
+    auth.anonymous:
+      enabled: true                     # consultation sans mot de passe (cluster local du TP)
+      org_role: Editor
+    users:
+      viewers_can_edit: true
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      url: http://loki.monitoring.svc.cluster.local:3100
+      jsonData:
+        maxLines: 1000
+        derivedFields:                  # correlation log -> trace (champ trace_id du log JSON)
+          - name: TraceID
+            matcherRegex: '"trace_id":\s*"(\w+)"'
+            datasourceUid: tempo
+            url: '$${__value.raw}'
+            urlDisplayLabel: Voir la trace dans Tempo
+    - name: Tempo
+      type: tempo
+      uid: tempo
+      url: http://tempo.monitoring.svc.cluster.local:3200
+      jsonData:
+        tracesToLogsV2:                 # correlation trace -> logs
+          datasourceUid: loki
+          spanStartTimeShift: "-5m"
+          spanEndTimeShift: "5m"
+          customQuery: true
+          query: '{namespace="tp-app"} |= "$${__trace.traceId}"'
+        serviceMap:
+          datasourceUid: prometheus
+        nodeGraph:
+          enabled: true

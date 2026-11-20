@@ -1,0 +1,26 @@
+# Variante sans Slack : Critical et Warning envoyes a un recepteur webhook local (alert-receiver)
+alertmanager:
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: "null"
+      group_by: [alertname, severity]
+      group_wait: 20s
+      group_interval: 1m
+      repeat_interval: 1h
+      routes:
+        - receiver: page-critical
+          matchers: ['severity="critical"']
+        - receiver: chat-warning
+          matchers: ['severity="warning"']
+    receivers:
+      - name: "null"
+      - name: page-critical
+        webhook_configs:
+          - url: http://alert-receiver.monitoring.svc.cluster.local:8080/page
+            send_resolved: true
+      - name: chat-warning
+        webhook_configs:
+          - url: http://alert-receiver.monitoring.svc.cluster.local:8080/slack
+            send_resolved: true
