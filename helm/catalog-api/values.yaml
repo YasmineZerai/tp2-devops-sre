@@ -23,7 +23,7 @@ resources:
     memory: 256Mi
 
 env:
-  FLAKY_ERROR_RATE: "0.1"
+  FLAKY_ERROR_RATE: "0.6"
   SLOW_RATE: "0.1"
   # Traces OpenTelemetry (OTLP gRPC) vers Tempo (etape 4)
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://tempo.monitoring.svc.cluster.local:4317"
