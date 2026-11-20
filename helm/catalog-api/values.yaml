@@ -5,7 +5,7 @@ image:
   repository: ghcr.io/yasminezerai/catalog-api
   # Tag immuable = SHA du commit. Sur la branche "deploy", il est reecrit par la CI
   # a chaque push sur main ; ArgoCD deploie alors automatiquement la nouvelle version.
-  tag: "fc4ff37b8916cdc85ed87c619f017dee96edf074"
+  tag: "c8a937859d96615ec255170d2eee2d7753b48b05"
   pullPolicy: IfNotPresent
 
 service:
