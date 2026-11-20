@@ -5,7 +5,7 @@ image:
   repository: ghcr.io/yasminezerai/catalog-api
   # Tag immuable = SHA du commit. Sur la branche "deploy", il est reecrit par la CI
   # a chaque push sur main ; ArgoCD deploie alors automatiquement la nouvelle version.
-  tag: "701b9de7fe8af591eb346ddf1f07dbc940483e0a"
+  tag: "fc4ff37b8916cdc85ed87c619f017dee96edf074"
   pullPolicy: IfNotPresent
 
 service:
@@ -25,6 +25,8 @@ resources:
 env:
   FLAKY_ERROR_RATE: "0.1"
   SLOW_RATE: "0.1"
+  # Traces OpenTelemetry (OTLP gRPC) vers Tempo (etape 4)
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://tempo.monitoring.svc.cluster.local:4317"
 
 # Decouverte automatique par Prometheus (etape 4)
 podAnnotations:
